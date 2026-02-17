@@ -32,6 +32,10 @@ const api = {
   // Stats
   getDashboardStats: () => ipcRenderer.invoke('stats:get-dashboard'),
 
+  // Data export/import
+  exportData: (courseIds: number[]) => ipcRenderer.invoke('data:export', courseIds),
+  importData: () => ipcRenderer.invoke('data:import'),
+
   // Shell
   openInVSCode: (folderPath: string) => ipcRenderer.invoke('shell:open-in-vscode', folderPath),
   openUrl: (url: string) => ipcRenderer.invoke('shell:open-url', url),

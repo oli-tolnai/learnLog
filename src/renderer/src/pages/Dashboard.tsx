@@ -6,12 +6,15 @@ import {
   CheckCircle2,
   Clock,
   Search,
-  GraduationCap
+  GraduationCap,
+  Download,
+  Upload
 } from 'lucide-react'
 import { useCourses } from '../hooks/useCourses'
 import { useStats } from '../hooks/useStats'
 import { CourseCard } from '../components/course/CourseCard'
 import { AddCourseDialog } from '../components/course/AddCourseDialog'
+import { ExportDialog } from '../components/course/ExportDialog'
 
 interface DashboardProps {
   onCourseClick: (courseId: number) => void
@@ -21,6 +24,7 @@ export function Dashboard({ onCourseClick }: DashboardProps): React.JSX.Element 
   const { courses, isLoading, refetch } = useCourses()
   const { stats, refetch: refetchStats } = useStats()
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [showExportDialog, setShowExportDialog] = useState(false)
   const [search, setSearch] = useState('')
 
   const filteredCourses = courses.filter(
@@ -90,6 +94,23 @@ export function Dashboard({ onCourseClick }: DashboardProps): React.JSX.Element 
             />
           </div>
           <button
+            onClick={async () => {
+              const result = await window.api.importData() as { success: boolean }
+              if (result.success) { refetch(); refetchStats() }
+            }}
+            className="p-2 text-muted-foreground hover:text-foreground bg-muted border border-border rounded-lg transition-colors shrink-0"
+            title="Import data"
+          >
+            <Upload className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setShowExportDialog(true)}
+            className="p-2 text-muted-foreground hover:text-foreground bg-muted border border-border rounded-lg transition-colors shrink-0"
+            title="Export data"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+          <button
             onClick={() => setShowAddDialog(true)}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors shrink-0"
           >
@@ -148,6 +169,12 @@ export function Dashboard({ onCourseClick }: DashboardProps): React.JSX.Element 
         isOpen={showAddDialog}
         onClose={() => setShowAddDialog(false)}
         onCourseAdded={handleCourseAdded}
+      />
+
+      <ExportDialog
+        isOpen={showExportDialog}
+        onClose={() => setShowExportDialog(false)}
+        courses={courses}
       />
     </div>
   )
