@@ -8,6 +8,8 @@ export interface CourseRow {
   youtube_url: string
   thumbnail_url: string | null
   project_folder_path: string
+  group_id: number | null
+  position_in_group: number
   created_at: string
   updated_at: string
   total_videos: number
@@ -28,7 +30,7 @@ export function getAllCourses(): CourseRow[] {
     FROM courses c
     LEFT JOIN videos v ON v.course_id = c.id
     GROUP BY c.id
-    ORDER BY c.updated_at DESC
+    ORDER BY c.position_in_group ASC, c.updated_at DESC
   `
     )
     .all() as CourseRow[]
@@ -96,4 +98,27 @@ export function updateCourseFolder(id: number, folderPath: string): void {
 export function updateCourseTitle(id: number, title: string): void {
   const db = getDatabase()
   db.prepare(`UPDATE courses SET title = ?, updated_at = datetime('now') WHERE id = ?`).run(title, id)
+}
+
+export function setCourseGroup(courseId: number, groupId: number | null): void {
+  const db = getDatabase()
+  const row = db
+    .prepare('SELECT COALESCE(MAX(position_in_group), -1) as max_pos FROM courses WHERE group_id IS ?')
+    .get(groupId) as { max_pos: number }
+  db.prepare(
+    `UPDATE courses SET group_id = ?, position_in_group = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(groupId, row.max_pos + 1, courseId)
+}
+
+export function reorderCoursesInGroup(orderedCourseIds: number[]): void {
+  const db = getDatabase()
+  const update = db.prepare(
+    `UPDATE courses SET position_in_group = ?, updated_at = datetime('now') WHERE id = ?`
+  )
+  const transaction = db.transaction(() => {
+    for (let i = 0; i < orderedCourseIds.length; i++) {
+      update.run(i, orderedCourseIds[i])
+    }
+  })
+  transaction()
 }

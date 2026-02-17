@@ -13,6 +13,19 @@ const api = {
     ipcRenderer.invoke('courses:update-folder', id, folderPath),
   updateCourseTitle: (id: number, title: string) =>
     ipcRenderer.invoke('courses:update-title', id, title),
+  setCourseGroup: (courseId: number, groupId: number | null) =>
+    ipcRenderer.invoke('courses:set-group', courseId, groupId),
+  reorderCoursesInGroup: (orderedCourseIds: number[]) =>
+    ipcRenderer.invoke('courses:reorder-in-group', orderedCourseIds),
+
+  // Groups
+  getGroups: () => ipcRenderer.invoke('groups:get-all'),
+  createGroup: (name: string) => ipcRenderer.invoke('groups:create', name),
+  renameGroup: (id: number, name: string) => ipcRenderer.invoke('groups:rename', id, name),
+  deleteGroup: (id: number) => ipcRenderer.invoke('groups:delete', id),
+  reorderGroups: (orderedIds: number[]) => ipcRenderer.invoke('groups:reorder', orderedIds),
+  toggleGroupCollapsed: (id: number, collapsed: boolean) =>
+    ipcRenderer.invoke('groups:toggle-collapsed', id, collapsed),
 
   // Videos
   getVideosByCourse: (courseId: number) => ipcRenderer.invoke('videos:get-by-course', courseId),

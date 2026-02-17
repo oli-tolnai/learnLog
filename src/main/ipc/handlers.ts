@@ -7,6 +7,7 @@ import { fetchPlaylistInfo } from './ytdlp'
 import * as courseRepo from '../db/repositories/courseRepository'
 import * as videoRepo from '../db/repositories/videoRepository'
 import * as tagRepo from '../db/repositories/tagRepository'
+import * as groupRepo from '../db/repositories/groupRepository'
 
 const DEFAULT_COURSES_DIR = path.join(
   path.dirname(path.dirname(__dirname)),
@@ -83,6 +84,39 @@ export function registerIpcHandlers(): void {
     courseRepo.updateCourseTitle(id, title)
   })
 
+  ipcMain.handle('courses:set-group', (_event, courseId: number, groupId: number | null) => {
+    courseRepo.setCourseGroup(courseId, groupId)
+  })
+
+  ipcMain.handle('courses:reorder-in-group', (_event, orderedCourseIds: number[]) => {
+    courseRepo.reorderCoursesInGroup(orderedCourseIds)
+  })
+
+  // === Groups ===
+  ipcMain.handle('groups:get-all', () => {
+    return groupRepo.getAllGroups()
+  })
+
+  ipcMain.handle('groups:create', (_event, name: string) => {
+    return groupRepo.createGroup(name)
+  })
+
+  ipcMain.handle('groups:rename', (_event, id: number, name: string) => {
+    groupRepo.renameGroup(id, name)
+  })
+
+  ipcMain.handle('groups:delete', (_event, id: number) => {
+    groupRepo.deleteGroup(id)
+  })
+
+  ipcMain.handle('groups:reorder', (_event, orderedIds: number[]) => {
+    groupRepo.reorderGroups(orderedIds)
+  })
+
+  ipcMain.handle('groups:toggle-collapsed', (_event, id: number, collapsed: boolean) => {
+    groupRepo.toggleGroupCollapsed(id, collapsed)
+  })
+
   // === Videos ===
   ipcMain.handle('videos:get-by-course', (_event, courseId: number) => {
     return videoRepo.getVideosByCourseId(courseId)
@@ -140,13 +174,24 @@ export function registerIpcHandlers(): void {
       ? db.prepare(`SELECT * FROM tags WHERE id IN (${tagIds.map(() => '?').join(',')})`).all(...tagIds)
       : []
 
+    // Collect groups referenced by selected courses
+    const groupIds = [...new Set(
+      (courses as Array<{ group_id: number | null }>)
+        .map(c => c.group_id)
+        .filter((id): id is number => id !== null)
+    )]
+    const courseGroups = groupIds.length > 0
+      ? db.prepare(`SELECT * FROM course_groups WHERE id IN (${groupIds.map(() => '?').join(',')})`).all(...groupIds)
+      : []
+
     const data = {
-      version: 2,
+      version: 3,
       exported_at: new Date().toISOString(),
       courses,
       videos,
       tags,
-      course_tags: courseTags
+      course_tags: courseTags,
+      course_groups: courseGroups
     }
     writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf-8')
     return { success: true, path: result.filePath }
@@ -174,7 +219,7 @@ export function registerIpcHandlers(): void {
     const importTransaction = db.transaction(() => {
       const findCourseByUrl = db.prepare('SELECT id FROM courses WHERE youtube_url = ?')
       const insertCourse = db.prepare(
-        'INSERT INTO courses (title, channel, youtube_playlist_id, youtube_url, thumbnail_url, project_folder_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO courses (title, channel, youtube_playlist_id, youtube_url, thumbnail_url, project_folder_path, position_in_group, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
       const updateCourse = db.prepare(
         `UPDATE courses SET title = ?, channel = ?, thumbnail_url = ?, project_folder_path = ?, updated_at = ? WHERE id = ?`
@@ -191,8 +236,25 @@ export function registerIpcHandlers(): void {
       )
       const insertCourseTag = db.prepare('INSERT OR IGNORE INTO course_tags (course_id, tag_id) VALUES (?, ?)')
 
+      // Import groups (v3+)
+      const groupIdMap = new Map<number, number>()
+      if (data.course_groups && Array.isArray(data.course_groups)) {
+        const findGroupByName = db.prepare('SELECT id FROM course_groups WHERE name = ?')
+        const insertGroup = db.prepare('INSERT INTO course_groups (name, position, collapsed, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+        for (const g of data.course_groups) {
+          const existing = findGroupByName.get(g.name) as { id: number } | undefined
+          if (existing) {
+            groupIdMap.set(g.id, existing.id)
+          } else {
+            const res = insertGroup.run(g.name, g.position, g.collapsed, g.created_at, g.updated_at)
+            groupIdMap.set(g.id, res.lastInsertRowid as number)
+          }
+        }
+      }
+
       // Build old course id -> new course id mapping
       const courseIdMap = new Map<number, number>()
+      const setCourseGroupStmt = db.prepare('UPDATE courses SET group_id = ? WHERE id = ?')
 
       for (const c of data.courses) {
         const existing = findCourseByUrl.get(c.youtube_url) as { id: number } | undefined
@@ -200,8 +262,16 @@ export function registerIpcHandlers(): void {
           updateCourse.run(c.title, c.channel, c.thumbnail_url, c.project_folder_path, c.updated_at, existing.id)
           courseIdMap.set(c.id, existing.id)
         } else {
-          const res = insertCourse.run(c.title, c.channel, c.youtube_playlist_id, c.youtube_url, c.thumbnail_url, c.project_folder_path, c.created_at, c.updated_at)
+          const res = insertCourse.run(c.title, c.channel, c.youtube_playlist_id, c.youtube_url, c.thumbnail_url, c.project_folder_path, c.position_in_group ?? 0, c.created_at, c.updated_at)
           courseIdMap.set(c.id, res.lastInsertRowid as number)
+        }
+        // Map group_id if present
+        const newCourseId = courseIdMap.get(c.id)!
+        if (c.group_id != null) {
+          const newGroupId = groupIdMap.get(c.group_id)
+          if (newGroupId) {
+            setCourseGroupStmt.run(newGroupId, newCourseId)
+          }
         }
       }
 

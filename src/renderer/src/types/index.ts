@@ -8,6 +8,17 @@ export interface Course {
   youtube_url: string
   thumbnail_url: string | null
   project_folder_path: string
+  group_id: number | null
+  position_in_group: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CourseGroup {
+  id: number
+  name: string
+  position: number
+  collapsed: boolean
   created_at: string
   updated_at: string
 }
